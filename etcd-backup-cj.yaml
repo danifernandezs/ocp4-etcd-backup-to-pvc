@@ -1,0 +1,124 @@
+---
+kind: CronJob
+apiVersion: batch/v1
+metadata:
+  name: etcd-backup
+  namespace: openshift-etcd
+  labels:
+    app: etcd-backup
+spec:
+  schedule: 20 4 * * *
+  TimeZone: UTC
+  concurrencyPolicy: Forbid
+  suspend: false
+  jobTemplate:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: etcd-backup
+    spec:
+      template:
+        metadata:
+          creationTimestamp: null
+          labels:
+            app: etcd-backup
+        spec:
+          nodeSelector:
+            node-role.kubernetes.io/control-plane: ''
+          restartPolicy: OnFailure
+          serviceAccountName: default
+          schedulerName: default-scheduler
+          terminationGracePeriodSeconds: 30
+          securityContext: {}
+          hostNetwork: true
+          containers:
+            - resources:
+                requests:
+                  cpu: 10m
+                  memory: 80Mi
+              securityContext:
+                privileged: true
+              terminationMessagePath: /dev/termination-log
+              name: etcd-backup
+              command:
+                - /bin/sh
+                - -c
+                - /etcd-backup.sh
+              env:
+                - name: ETCD_BACKUP_DB_BASE_PATH
+                  value: /etc/kubernetes/etcd-db-backup
+                - name: ETCD_BACKUP_KUBERESOURCES_BASE_PATH
+                  value: /etc/kubernetes/etcd-kuberesources-backup
+                - name: ETCD_BACKUP_RETENTION
+                  value: '15'
+                - name: ETCDCTL_CERT
+                  value: /var/run/secrets/etcd-client/tls.crt
+                - name: ETCDCTL_KEY
+                  value: /var/run/secrets/etcd-client/tls.key
+                - name: ETCDCTL_CACERT
+                  value: /var/run/configmaps/etcd-ca/ca-bundle.crt
+              volumeMounts:
+                - name: backup-script
+                  mountPath: /etcd-backup.sh
+                  subPath: backup.sh
+                - name: usr-local-bin
+                  mountPath: /usr/local/bin
+                - name: resources-dir
+                  mountPath: /etc/kubernetes/static-pod-resources
+                - name: cert-dir
+                  mountPath: /etc/kubernetes/static-pod-certs
+                - name: static-pod-dir
+                  mountPath: /etc/kubernetes/manifests
+                - name: etcd-db-backup
+                  mountPath: /etc/kubernetes/etcd-db-backup
+                - name: etcd-kuberesources-backup
+                  mountPath: /etc/kubernetes/etcd-kuberesources-backup
+                - name: etcd-client
+                  mountPath: /var/run/secrets/etcd-client
+                - name: etcd-ca
+                  mountPath: /var/run/configmaps/etcd-ca
+              imagePullPolicy: IfNotPresent
+              terminationMessagePolicy: FallbackToLogsOnError
+              image: 'quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:512639a0fadf99aa5ad3bcd95194fd65d478efd228951f95be32314b78ff68b0'
+          serviceAccount: default
+          volumes:
+            - name: backup-script
+              configMap:
+                name: etcd-backup-script
+                defaultMode: 320
+            - name: usr-local-bin
+              hostPath:
+                path: /usr/local/bin
+                type: ''
+            - name: static-pod-dir
+              hostPath:
+                path: /etc/kubernetes/manifests
+                type: ''
+            - name: resources-dir
+              hostPath:
+                path: /etc/kubernetes/static-pod-resources
+                type: ''
+            - name: cert-dir
+              hostPath:
+                path: /etc/kubernetes/static-pod-resources/etcd-certs
+                type: ''
+            - name: etcd-client
+              secret:
+                secretName: etcd-client
+                defaultMode: 420
+            - name: etcd-ca
+              configMap:
+                name: etcd-ca-bundle
+                defaultMode: 420
+            - name: etcd-db-backup
+              persistentVolumeClaim:
+                claimName: etcd-db-backup-pvc
+            - name: etcd-kuberesources-backup
+              persistentVolumeClaim:
+                claimName: etcd-kuberesources-backup-pvc
+          dnsPolicy: ClusterFirst
+          tolerations:
+            - effect: NoSchedule
+              key: node-role.kubernetes.io/master
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 10
