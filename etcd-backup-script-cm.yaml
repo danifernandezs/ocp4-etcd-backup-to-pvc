@@ -1,0 +1,133 @@
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: etcd-backup-script
+  namespace: openshift-etcd
+immutable: false
+data:
+  backup.sh: |
+    #!/bin/bash
+
+    # Function to set the date
+    set_date() {
+        export DATE=$(date +"%Y-%m-%d_%H%M%S")
+        echo "Backup started at $DATE"
+    }
+
+    # Function to check if retention is defined
+    check_retention() {
+        if [ -z "$ETCD_BACKUP_RETENTION" ]; then
+            echo "Backup retention is not defined. Using default value of 15"
+            ETCD_BACKUP_RETENTION=35
+        else
+            echo "Backup retention is set to $ETCD_BACKUP_RETENTION"
+        fi
+    }
+
+    # Function to clean old backups
+    clean_old_backups() {
+        local BACKUP_DIR=$1
+        echo "Checking backups in: $BACKUP_DIR"
+
+        if [ -d "$BACKUP_DIR" ]; then
+            # Count the number of files
+            BACKUP_COUNT=$(ls -1t "$BACKUP_DIR" | wc -l)
+
+            if [ "$BACKUP_COUNT" -gt "$ETCD_BACKUP_RETENTION" ]; then
+                # Calculate how many files to delete
+                TO_DELETE=$((BACKUP_COUNT - ETCD_BACKUP_RETENTION))
+                echo "Deleting the $TO_DELETE oldest backups in $BACKUP_DIR"
+                # Remove the oldest files
+                ls -1t "$BACKUP_DIR" | tail -n "$TO_DELETE" | xargs -I {} echo "$BACKUP_DIR/{}" && rm -rf "$BACKUP_DIR/{}"
+            else
+                echo "No deletion required. There are $BACKUP_COUNT backups, and the retention limit is $ETCD_BACKUP_RETENTION"
+            fi
+        else
+            echo "Directory $BACKUP_DIR does not exist."
+        fi
+    }
+
+    # Function to create subfolders for the backup
+    create_subfolders() {
+        local BACKUP_DIR=$1
+
+        if [ -d "$BACKUP_DIR" ]; then
+            # Create the subfolders
+            echo "Creating subfolders in $BACKUP_DIR"
+            mkdir -p "$BACKUP_DIR/$DATE"
+            echo "The subfolder created is $BACKUP_DIR/$DATE"
+        else
+            echo "Directory $BACKUP_DIR does not exist."
+        fi
+    }
+
+    # Function to perform the full etcd backup
+    perform_backup() {
+        local BACKUP_DIR=$1
+
+        if [ -d "$BACKUP_DIR" ]; then
+            # Perform the backup
+            echo "Performing ETCD backup in $BACKUP_DIR/${DATE}"
+            echo ""
+            cluster-etcd-operator cluster-backup --backup-dir "${BACKUP_DIR}/${DATE}"
+        else
+            echo "Directory $BACKUP_DIR does not exist."
+        fi
+    }
+
+    # Function to move the kuberesources to the correct folder
+    move_kuberesources() {
+        local BACKUP_DIR=$1
+        local KUBERESOURCES_DIR=$2
+
+        if [ -d "$BACKUP_DIR" ]; then
+            # Move the kuberesources
+            echo "Moving kuberesources to $KUBERESOURCES_DIR/$DATE"
+            mv ${BACKUP_DIR}/${DATE}/static_kuberesources_*.tar.gz "$KUBERESOURCES_DIR/$DATE"
+        else
+            echo "Directory $BACKUP_DIR does not exist."
+        fi
+    }
+
+    # Funtion to list the performed backups
+    list_backups() {
+        local BACKUP_DIR=$1
+
+        if [ -d "$BACKUP_DIR" ]; then
+            # List the backups
+            echo "Listing backups in $BACKUP_DIR/$DATE"
+            ls -lahrt "$BACKUP_DIR/$DATE"
+        else
+            echo "Directory $BACKUP_DIR does not exist."
+        fi
+    }
+
+    # Set the date
+    set_date
+
+    # Check if retention is defined
+    check_retention
+
+    # Run cleanup on both backup directories
+    echo ""
+    clean_old_backups "$ETCD_BACKUP_DB_BASE_PATH"
+    clean_old_backups "$ETCD_BACKUP_KUBERESOURCES_BASE_PATH"
+
+    # Run the subfolder creation
+    echo ""
+    create_subfolders "$ETCD_BACKUP_DB_BASE_PATH"
+    create_subfolders "$ETCD_BACKUP_KUBERESOURCES_BASE_PATH"
+
+    # Run the backup
+    echo ""
+    perform_backup "$ETCD_BACKUP_DB_BASE_PATH"
+
+    # Move the kuberesources
+    echo ""
+    move_kuberesources "$ETCD_BACKUP_DB_BASE_PATH" "$ETCD_BACKUP_KUBERESOURCES_BASE_PATH"
+
+    # List the backups
+    echo ""
+    list_backups "$ETCD_BACKUP_DB_BASE_PATH"
+    list_backups "$ETCD_BACKUP_KUBERESOURCES_BASE_PATH"
