@@ -19,7 +19,7 @@ data:
     check_retention() {
         if [ -z "$ETCD_BACKUP_RETENTION" ]; then
             echo "Backup retention is not defined. Using default value of 15"
-            ETCD_BACKUP_RETENTION=35
+            ETCD_BACKUP_RETENTION=15
         else
             echo "Backup retention is set to $ETCD_BACKUP_RETENTION"
         fi
