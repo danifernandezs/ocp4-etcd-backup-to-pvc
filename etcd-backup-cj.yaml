@@ -8,7 +8,7 @@ metadata:
     app: etcd-backup
 spec:
   schedule: 20 4 * * *
-  TimeZone: UTC
+  timeZone: UTC
   concurrencyPolicy: Forbid
   suspend: false
   jobTemplate:
@@ -26,8 +26,6 @@ spec:
           nodeSelector:
             node-role.kubernetes.io/control-plane: ''
           restartPolicy: OnFailure
-          serviceAccountName: default
-          schedulerName: default-scheduler
           terminationGracePeriodSeconds: 30
           securityContext: {}
           hostNetwork: true
@@ -80,7 +78,6 @@ spec:
               imagePullPolicy: IfNotPresent
               terminationMessagePolicy: FallbackToLogsOnError
               image: 'quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:512639a0fadf99aa5ad3bcd95194fd65d478efd228951f95be32314b78ff68b0'
-          serviceAccount: default
           volumes:
             - name: backup-script
               configMap:
